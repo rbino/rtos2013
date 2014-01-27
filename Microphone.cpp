@@ -69,10 +69,10 @@ void __attribute__((naked)) DMA1_Stream3_IRQHandler()
  */
 void __attribute__((used)) I2SdmaHandlerImpl()
 {
-	DMA1->HIFCR=DMA_HIFCR_CTCIF5  |
-                DMA_HIFCR_CTEIF5  |
-                DMA_HIFCR_CDMEIF5 |
-                DMA_HIFCR_CFEIF5;
+	DMA1->LIFCR=DMA_LIFCR_CTCIF3  |
+                DMA_LIFCR_CTEIF3  |
+                DMA_LIFCR_CDMEIF3 |
+                DMA_LIFCR_CFEIF3;
 	bq->IRQbufferEmptied();
 	IRQdmaRefill();
 	waiting->IRQwakeup();
@@ -136,15 +136,13 @@ Microphone::Microphone() {
     
     // RX buffer not empty interrupt enable
     SPI2->CR2 = SPI_CR2_RXDMAEN;
-    
-    // I2S Enable
-    SPI2->I2SCFGR = SPI_I2SCFGR_I2SE;
    
     
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
     NVIC_EnableIRQ(DMA1_Stream3_IRQn);
     
-    
+    // I2S Enable
+    SPI2->I2SCFGR = SPI_I2SCFGR_I2SE;
     
 }
 
