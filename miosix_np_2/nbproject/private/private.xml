@@ -5,8 +5,21 @@
     </code-assistance-data>
     <data xmlns="http://www.netbeans.org/ns/make-project-private/1">
         <activeConfTypeElem>0</activeConfTypeElem>
-        <activeConfIndexElem>2</activeConfIndexElem>
+        <activeConfIndexElem>7</activeConfIndexElem>
     </data>
     <editor-bookmarks xmlns="http://www.netbeans.org/ns/editor-bookmarks/1"/>
     <editor-bookmarks xmlns="http://www.netbeans.org/ns/editor-bookmarks/2" lastBookmarkId="0"/>
+    <open-files xmlns="http://www.netbeans.org/ns/projectui-open-files/2">
+        <group>
+            <file>file:/home/user/rtos2013/miosix/arch/arm7_lpc2000/lpc2138_miosix_board/interfaces-impl/bsp.cpp</file>
+            <file>file:/home/user/rtos2013/Microphone.h</file>
+            <file>file:/home/user/rtos2013/miosix/arch/cortexM3_stm32f2/common/CMSIS/system_stm32f2xx.c</file>
+            <file>file:/home/user/rtos2013/main.cpp</file>
+            <file>file:/home/user/rtos2013/Microphone.cpp</file>
+            <file>file:/home/user/rtos2013/miosix/arch/cortexM3_stm32f2/common/CMSIS/stm32f2xx.h</file>
+            <file>file:/home/user/rtos2013/miosix/arch/cortexM4_stm32f4/common/CMSIS/system_stm32f4xx.c</file>
+            <file>file:/home/user/rtos2013/miosix/arch/cortexM4_stm32f4/common/CMSIS/stm32f4xx.h</file>
+            <file>file:/home/user/rtos2013/Makefile</file>
+        </group>
+    </open-files>
 </project-private>
