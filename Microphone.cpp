@@ -30,6 +30,7 @@ static void IRQdmaRefill()
 {
     const unsigned short *buffer;
 	unsigned int size;
+        /* TODO: Change to writable buffer */
 	if(bq->IRQgetReadableBuffer(buffer,size)==false)
 	{
 		enobuf=true;
@@ -43,7 +44,6 @@ static void IRQdmaRefill()
                      DMA_SxCR_MSIZE_0 | //Read  16bit at a time from RAM
 					 DMA_SxCR_PSIZE_0 | //Write 16bit at a time to SPI
 				     DMA_SxCR_MINC    | //Increment RAM pointer
-			         DMA_SxCR_DIR_0   | //Memory to peripheral direction
 			         DMA_SxCR_TCIE    | //Interrupt on completion
 			  	     DMA_SxCR_EN;       //Start the DMA
 }
@@ -117,32 +117,23 @@ Microphone::Microphone() {
     }
     //Wait for PLL to lock
     while((RCC->CR & RCC_CR_PLLI2SRDY)==0) ;
- 
-    // Tx buffer DMA enable
-    SPI2->CR2=SPI_CR2_TXDMAEN;
-     
-    //SPI2->I2SPR=  SPI_I2SPR_MCKOE | 6;
     
     // Fs = I2SxCLK / [(16*2)*((2*I2SDIV)+ODD)*8)] when the channel frame is 16-bit wide (/2 if Mono)
     SPI2->I2SPR=  SPI_I2SPR_MCKOE | 2;
-    
-    
-    SPI2->I2SCFGR=SPI_I2SCFGR_I2SMOD    //I2S mode selected
-                | SPI_I2SCFGR_I2SE      //I2S Enabled
-                | SPI_I2SCFGR_I2SCFG_1; //Master transmit
 
     //Configure SPI
-    SPI2->I2SCFGR = SPI_I2SCFGR_I2SSTD_1 | SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_CKPOL;
+    SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1;
     
     // RX buffer not empty interrupt enable
-    SPI2->CR2 = SPI_CR2_RXDMAEN;
-   
+    SPI2->CR2 = SPI_CR2_RXDMAEN;  
     
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
     NVIC_EnableIRQ(DMA1_Stream3_IRQn);
     
     // I2S Enable
     SPI2->I2SCFGR = SPI_I2SCFGR_I2SE;
+    
+    
     
 }
 
