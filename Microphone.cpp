@@ -47,6 +47,7 @@ static void IRQdmaRefill()
 			  	     DMA_SxCR_EN;       //Start the DMA
 }
 
+
 static void dmaRefill()
 {
 	FastInterruptDisableLock dLock;
@@ -126,6 +127,7 @@ void Microphone::start(){
     //Wait for PLL to lock
     while((RCC->CR & RCC_CR_PLLI2SRDY)==0) ;
     
+    // RX buffer not empty interrupt enable
     SPI2->CR2 = SPI_CR2_RXDMAEN;  
     
     // Fs = I2SxCLK / [(16*2)*((2*I2SDIV)+ODD)*8)] when the channel frame is 16-bit wide (/2 if Mono)
@@ -133,8 +135,6 @@ void Microphone::start(){
 
     //Configure SPI
     SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_I2SE;
-    
-    // RX buffer not empty interrupt enable
 
     
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
