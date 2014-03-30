@@ -14,12 +14,18 @@
 class Microphone {
 public:
     static Microphone& instance();
+    void start();
+    void stop();
+    bool isRecording() const;
+    unsigned int getBuffer(const unsigned short *&buffer);
 
 private:
     Microphone();
     Microphone(const Microphone& orig);
     virtual ~Microphone();
-    mutable miosix::Mutex mutex;
+    bool recording;
+    
+    
 };
 
 #endif	/* MICROPHONE_H */
