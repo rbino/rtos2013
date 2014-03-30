@@ -146,6 +146,9 @@ void Microphone::start(){
     
 }
 
+void Microphone::stop(){
+    recording = false;
+    //TODO: altro
 }
 
 Microphone::~Microphone() {
