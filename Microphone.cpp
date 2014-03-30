@@ -76,7 +76,6 @@ void __attribute__((used)) I2SdmaHandlerImpl()
                 DMA_LIFCR_CFEIF3;
 	bq->IRQbufferFilled(bufferSize);
 	IRQdmaRefill();
-        bq->IRQbufferEmptied();
 	waiting->IRQwakeup();
 	if(waiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
 		Scheduler::IRQfindNextThread();
