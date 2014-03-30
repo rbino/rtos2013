@@ -157,3 +157,15 @@ Microphone::~Microphone() {
 bool Microphone::isRecording() const{
     return recording;
 }
+
+unsigned int Microphone::getBuffer(const unsigned short*& buffer){
+    unsigned int size;
+    
+    if(bq->IRQgetReadableBuffer(buffer, size)){
+        return size;
+    } else {
+        return 0;
+    }
+}
+
+
