@@ -88,7 +88,14 @@ Microphone& Microphone::instance()
 }
 
 Microphone::Microphone() {
-    Lock<Mutex> l(mutex);
+    recording = false;
+}
+
+Microphone::Microphone(const Microphone& orig) {
+}
+
+void Microphone::start(){
+    recording = true;
     bq=new BufferQueue<unsigned short,bufferSize>();
 
     {
@@ -119,26 +126,26 @@ Microphone::Microphone() {
     //Wait for PLL to lock
     while((RCC->CR & RCC_CR_PLLI2SRDY)==0) ;
     
+    SPI2->CR2 = SPI_CR2_RXDMAEN;  
+    
     // Fs = I2SxCLK / [(16*2)*((2*I2SDIV)+ODD)*8)] when the channel frame is 16-bit wide (/2 if Mono)
     SPI2->I2SPR=  SPI_I2SPR_MCKOE | 2;
 
     //Configure SPI
-    SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1;
+    SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_I2SE;
     
     // RX buffer not empty interrupt enable
-    SPI2->CR2 = SPI_CR2_RXDMAEN;  
+
     
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
     NVIC_EnableIRQ(DMA1_Stream3_IRQn);
     
-    // I2S Enable
-    SPI2->I2SCFGR = SPI_I2SCFGR_I2SE;
+    waiting = Thread::getCurrentThread();
     
-    
+    dmaRefill();  
     
 }
 
-Microphone::Microphone(const Microphone& orig) {
 }
 
 Microphone::~Microphone() {
