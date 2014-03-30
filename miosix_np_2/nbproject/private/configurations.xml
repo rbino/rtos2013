@@ -412,6 +412,7 @@
       </df>
       <in>Microphone.cpp</in>
       <in>Microphone.h</in>
+      <in>Triple_buffer.h</in>
       <in>main.cpp</in>
     </df>
   </logicalFolder>
