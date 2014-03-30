@@ -28,10 +28,9 @@ static bool enobuf=true;
  */
 static void IRQdmaRefill()
 {
-    const unsigned short *buffer;
-	unsigned int size;
-        /* TODO: Change to writable buffer */
-	if(bq->IRQgetReadableBuffer(buffer,size)==false)
+    unsigned short *buffer;
+    
+	if(bq->IRQgetWritableBuffer(buffer)==false)
 	{
 		enobuf=true;
 		return;
@@ -39,7 +38,7 @@ static void IRQdmaRefill()
     DMA1_Stream3->CR=0;
 	DMA1_Stream3->PAR=reinterpret_cast<unsigned int>(&SPI2->DR);
 	DMA1_Stream3->M0AR=reinterpret_cast<unsigned int>(buffer);
-	DMA1_Stream3->NDTR=size;
+	DMA1_Stream3->NDTR=bufferSize;
 	DMA1_Stream3->CR=DMA_SxCR_PL_1    | //High priority DMA stream
                      DMA_SxCR_MSIZE_0 | //Read  16bit at a time from RAM
 					 DMA_SxCR_PSIZE_0 | //Write 16bit at a time to SPI
@@ -69,12 +68,14 @@ void __attribute__((naked)) DMA1_Stream3_IRQHandler()
  */
 void __attribute__((used)) I2SdmaHandlerImpl()
 {
+    
 	DMA1->LIFCR=DMA_LIFCR_CTCIF3  |
                 DMA_LIFCR_CTEIF3  |
                 DMA_LIFCR_CDMEIF3 |
                 DMA_LIFCR_CFEIF3;
-	bq->IRQbufferEmptied();
+	bq->IRQbufferFilled(bufferSize);
 	IRQdmaRefill();
+        bq->IRQbufferEmptied();
 	waiting->IRQwakeup();
 	if(waiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
 		Scheduler::IRQfindNextThread();
