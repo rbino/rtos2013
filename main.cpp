@@ -2,12 +2,36 @@
 #include <cstdio>
 #include "miosix.h"
 #include "Microphone.h"
+#include "player.h"
+#include <math.h>
 
 using namespace std;
 using namespace miosix;
 
+typedef Gpio<GPIOD_BASE,12> led1;
+
 int main()
 {
+    led1::mode(Mode::OUTPUT);
+
     
-    //iprintf("Hello world, write your application here\n");
+    while(1)
+    {
+        static const unsigned short size = 44100;
+        unsigned short *buffer = (unsigned short*) malloc(sizeof(unsigned short)*size);
+        
+        if (buffer==NULL){
+            led1::high();
+        }
+
+        if (Microphone::instance().getBuffer(Microphone::F44100HZ, buffer, size)){
+  
+                PCMSound sound(buffer,size);
+                Player::instance().play(sound);                      
+
+        }
+        
+        free(buffer);
+
+    }
 }

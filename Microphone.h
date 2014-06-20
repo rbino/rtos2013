@@ -8,22 +8,33 @@
 
 #include "miosix.h"
 
+
+
 #ifndef MICROPHONE_H
 #define	MICROPHONE_H
 
+class CICFilter{
+    
+};
+
 class Microphone {
 public:
+    typedef enum {F8000HZ, F44100HZ} SampleFreq;
     static Microphone& instance();
-    void start();
-    void stop();
-    bool isRecording() const;
-    unsigned int getBuffer(const unsigned short *&buffer);
+    bool getBuffer(SampleFreq freq, unsigned short* buffer, unsigned short size);
+    
 
 private:
     Microphone();
     Microphone(const Microphone& orig);
     virtual ~Microphone();
-    bool recording;
+    bool busy;
+    mutable miosix::Mutex mutex;
+    unsigned short PCMsize;
+    unsigned short PCMindex;
+    unsigned short* PCMbuffer;
+    bool processPDM(const unsigned short *pdmbuffer, int size);
+    unsigned short PDMFilter(const unsigned short* PDMBuffer, unsigned short index);
     
     
 };

@@ -18,10 +18,15 @@ using namespace miosix;
 typedef Gpio<GPIOB_BASE,10> clk;
 typedef Gpio<GPIOC_BASE,3> dout;
 
-static const int bufferSize=2048; //Buffer RAM is 4*bufferSize bytes
+static const int bufferSize=512; //Buffer RAM is 4*bufferSize bytes
 static Thread *waiting;
 static BufferQueue<unsigned short,bufferSize> *bq;
 static bool enobuf=true;
+static const char filterOrder = 3;
+static const short oversample = 32;
+static unsigned short intReg[filterOrder] = {0x8000,0x8000,0x8000};
+static unsigned short combReg[filterOrder] = {0x8000, 0x8000,0x8000};
+static signed char pdmLUT[] = {-1, 1};
 
 /**
  * Configure the DMA to do another transfer
@@ -40,12 +45,14 @@ static void IRQdmaRefill()
 	DMA1_Stream3->M0AR=reinterpret_cast<unsigned int>(buffer);
 	DMA1_Stream3->NDTR=bufferSize;
 	DMA1_Stream3->CR=DMA_SxCR_PL_1    | //High priority DMA stream
-                     DMA_SxCR_MSIZE_0 | //Read  16bit at a time from RAM
-					 DMA_SxCR_PSIZE_0 | //Write 16bit at a time to SPI
+                     DMA_SxCR_MSIZE_0 | //Write 16bit at a time to RAM
+					 DMA_SxCR_PSIZE_0 | //Read 16bit at a time from SPI
 				     DMA_SxCR_MINC    | //Increment RAM pointer
 			         DMA_SxCR_TCIE    | //Interrupt on completion
 			  	     DMA_SxCR_EN;       //Start the DMA
 }
+
+
 
 
 static void dmaRefill()
@@ -81,6 +88,57 @@ void __attribute__((used)) I2SdmaHandlerImpl()
 		Scheduler::IRQfindNextThread();
 }
 
+/**
+ * This function allows to atomically check if a variable equals a specific
+ * value and if not, put the thread in wait state until said condition is
+ * satisfied. To wake the thread, another thread or an interrupt routine
+ * should first set the variable to the desired value, and then call
+ * wakeup() (or IRQwakeup()) on the sleeping thread.
+ * \param T type of the variable to test
+ * \param variable the variable to test
+ * \param value the value that will cause this function to return.
+ */
+template<typename T>
+static void atomicTestAndWaitUntil(volatile T& variable, T value)
+{
+	FastInterruptDisableLock dLock;
+	while(variable!=value)
+	{
+		Thread::IRQgetCurrentThread()->IRQwait();
+		{
+			FastInterruptEnableLock eLock(dLock);
+			Thread::yield();
+		}
+	}
+}
+
+/**
+ * Helper function that waits until a buffer is available for reading
+ * \return a readable buffer from bq
+ */
+static const unsigned short *getReadableBuffer()
+{
+	FastInterruptDisableLock dLock;
+	const unsigned short *result;
+        unsigned int size;
+	while(bq->IRQgetReadableBuffer(result, size)==false)
+	{
+		waiting->IRQwait();
+		{
+			FastInterruptEnableLock eLock(dLock);
+			Thread::yield();
+		}
+	}
+	return result;
+}
+
+static void bufferEmptied()
+{
+	FastInterruptDisableLock dLock;
+	bq->IRQbufferEmptied();
+}
+
+
 Microphone& Microphone::instance()
 {
 	static Microphone singleton;
@@ -88,16 +146,71 @@ Microphone& Microphone::instance()
 }
 
 Microphone::Microphone() {
-    recording = false;
+    busy = false;
+}
+
+bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
+    int remaining = PCMsize - PCMindex;
+    int length = std::min(remaining, size/2);
+    for (int i=0; i < length; i+=2){
+        PCMbuffer[PCMindex++] = PDMFilter(pdmbuffer, i);
+    }
+    if (PCMindex < PCMsize)
+        return false;
+    
+    return true;    
+}
+
+unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned short index) {
+    
+    short combInput, combRes;
+    
+    for (short i=0; i < 16; i++){
+        intReg[0] += pdmLUT[(PDMBuffer[index] >> (15-i)) & 1];
+        for (short j=1; j < filterOrder; j++){
+            intReg[j] += intReg[j-1];
+        }
+    }
+    
+    for (short i=0; i < 16; i++){
+    //for (short i=15; i >= 0; i--){
+        intReg[0] += pdmLUT[(PDMBuffer[index+1] >> (15-i)) & 1];
+        for (short j=1; j < filterOrder; j++){
+            intReg[j] += intReg[j-1];
+        }
+    }
+    
+    combInput = intReg[filterOrder-1];
+    
+    for (short i=0; i < filterOrder; i++){
+        combRes = combInput - combReg[i];
+        combReg[i] = combInput;
+        combInput = combRes;
+    }
+    
+    return combRes * 2;
+    
 }
 
 Microphone::Microphone(const Microphone& orig) {
 }
 
-void Microphone::start(){
-    recording = true;
+bool Microphone::getBuffer(SampleFreq freq,  unsigned short* buffer, unsigned short size){
+    /*
+    mutex.lock();
+    if (busy == true){
+        mutex.unlock();
+        return false;
+    }
+    busy = true;
+    mutex.unlock();
+    */
+    PCMsize = size;
+    PCMindex = 0;
+    PCMbuffer = buffer;
+    
     bq=new BufferQueue<unsigned short,bufferSize>();
-
+    
     {
         FastInterruptDisableLock dLock;
         //Enable DMA1 and SPI2/I2S2 and GPIOB and GPIOC
@@ -114,12 +227,9 @@ void Microphone::start(){
         dout::speed(Speed::_50MHz);
         
         
-        //Enable audio PLL (settings for 44100Hz audio) TODO: trovare divisore (Questo diviso 16?)
         // I2S PLL Clock Frequency: 135.5 Mhz
-        //RCC->PLLI2SCFGR=(2<<28) | (271<<6);
-        
-        //I2S PLL Clock Frequency: 262 Mhz
-        RCC->PLLI2SCFGR=(2<<28) | (262<<6);
+        RCC->PLLI2SCFGR=(2<<28) | (271<<6);
+        //RCC->PLLI2SCFGR=(4<<28) | (429<<6);
         
         RCC->CR |= RCC_CR_PLLI2SON;
     }
@@ -129,42 +239,52 @@ void Microphone::start(){
     // RX buffer not empty interrupt enable
     SPI2->CR2 = SPI_CR2_RXDMAEN;  
     
-    // Fs = I2SxCLK / [(16*2)*((2*I2SDIV)+ODD)*8)] when the channel frame is 16-bit wide (/2 if Mono)
-    SPI2->I2SPR=  SPI_I2SPR_MCKOE | 2;
+    /* The settings are the same as 44100Hz 16 bit stereo because
+     * the oversampling factor is 32, the channel is 1 and PDM is 1 bit,
+     * so 44100Hz * 16bit * 2 == 44100 * 32 * 1bit
+     */
+    SPI2->I2SPR=  SPI_I2SPR_MCKOE | 3;
+    //SPI2->I2SPR=  SPI_I2SPR_MCKOE | SPI_I2SPR_ODD | 9;
 
     //Configure SPI
     SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_I2SE;
 
     
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
-    NVIC_EnableIRQ(DMA1_Stream3_IRQn);
+    NVIC_EnableIRQ(DMA1_Stream3_IRQn); 
     
     waiting = Thread::getCurrentThread();
+    for (;;){
+        if(enobuf){
+            enobuf = false;
+            dmaRefill();
+        }
+        if(processPDM(getReadableBuffer(),bufferSize) == true){
+            break;
+        }
+        bufferEmptied();  
+        
+    }
     
-    dmaRefill();  
+    atomicTestAndWaitUntil(enobuf,true);
     
+    NVIC_DisableIRQ(DMA1_Stream3_IRQn);
+    SPI2->I2SCFGR=0;
+    {
+	FastInterruptDisableLock dLock;
+        RCC->CR &= ~RCC_CR_PLLI2SON;
+    }
+    delete bq;
+    
+    enobuf = true;
+    
+    //busy = false;
+    
+    return true;
 }
 
-void Microphone::stop(){
-    recording = false;
-    //TODO: altro
-}
 
 Microphone::~Microphone() {
-}
-
-bool Microphone::isRecording() const{
-    return recording;
-}
-
-unsigned int Microphone::getBuffer(const unsigned short*& buffer){
-    unsigned int size;
-    
-    if(bq->IRQgetReadableBuffer(buffer, size)){
-        return size;
-    } else {
-        return 0;
-    }
 }
 
 
