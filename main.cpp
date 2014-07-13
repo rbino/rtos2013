@@ -10,6 +10,10 @@ using namespace miosix;
 
 typedef Gpio<GPIOD_BASE,12> led1;
 
+/*
+ * This example program records 1 second from the microphone (44100 samples) and
+ * plays such sound through the board's DAC.
+ */
 int main()
 {
     led1::mode(Mode::OUTPUT);

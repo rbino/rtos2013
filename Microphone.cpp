@@ -151,12 +151,13 @@ Microphone::Microphone() {
 
 bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
     int remaining = PCMsize - PCMindex;
-    int length = std::min(remaining, size/2);
+    int length = std::min(remaining, size/2); 
+    // convert couples of 16 bit pdm samples in one 16-bit PCM sample
     for (int i=0; i < length; i+=2){
         PCMbuffer[PCMindex++] = PDMFilter(pdmbuffer, i);
     }
-    if (PCMindex < PCMsize)
-        return false;
+    if (PCMindex < PCMsize) //if produced PCM sample are not enough 
+        return false; 
     
     return true;    
 }
@@ -165,6 +166,7 @@ unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned s
     
     short combInput, combRes;
     
+    // perform integration on the first word of the PDM chunk to be filtered
     for (short i=0; i < 16; i++){
         intReg[0] += pdmLUT[(PDMBuffer[index] >> (15-i)) & 1];
         for (short j=1; j < filterOrder; j++){
@@ -172,6 +174,7 @@ unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned s
         }
     }
     
+    // perform integration on the second word
     for (short i=0; i < 16; i++){
     //for (short i=15; i >= 0; i--){
         intReg[0] += pdmLUT[(PDMBuffer[index+1] >> (15-i)) & 1];
@@ -179,9 +182,10 @@ unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned s
             intReg[j] += intReg[j-1];
         }
     }
+        
+    combInput = intReg[filterOrder-1];// the last cell of intReg contains the integrated signal
     
-    combInput = intReg[filterOrder-1];
-    
+    //apply the comb filter:
     for (short i=0; i < filterOrder; i++){
         combRes = combInput - combReg[i];
         combReg[i] = combInput;

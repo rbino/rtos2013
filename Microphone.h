@@ -7,6 +7,8 @@
  * This class define a simple interface for recording audio with the embedded
  * microphone of the STM32F4 Discovery board. It outputs an array of PCM samples
  * obtained by transcoding the PDM signal of the microphone.
+ * Note that the microphone on the board outputs PDM samples that are internally
+ * converted to PCM by the Microphone class.
  * 
  */
 
@@ -28,8 +30,25 @@ class CICFilter{
  */
 class Microphone {
 public:
+    
+    /*
+     * The possible sampling frequencies.
+     */
     typedef enum {F8000HZ, F44100HZ} SampleFreq;
+    
+    /* 
+     * \eturn the instance of the Microphone class to be used for recording.
+     */
     static Microphone& instance();
+    
+    /*
+     * Fills the given buffer with PCM samples.
+     * 
+     * \param freq the sampling frequency
+     * \param buffer the buffer to fill with 16-bit PCM samples
+     * \param the number of PCM sample to record
+     * \return true when the recording ends successfully, false otherwise
+     */
     bool getBuffer(SampleFreq freq, unsigned short* buffer, unsigned short size);
     
 
