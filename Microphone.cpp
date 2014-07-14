@@ -11,6 +11,7 @@
 #include "miosix/kernel/scheduler/scheduler.h"
 #include "util/software_i2c.h"
 #include "Microphone.h"
+#include <tr1/functional>
 
 using namespace std;
 using namespace miosix;
@@ -18,9 +19,10 @@ using namespace miosix;
 typedef Gpio<GPIOB_BASE,10> clk;
 typedef Gpio<GPIOC_BASE,3> dout;
 
-static const int bufferSize=512; //Buffer RAM is 4*bufferSize bytes
+static const int bufferSize=32; //Buffer RAM is 4*bufferSize bytes
+static const int bufNum = 2;
 static Thread *waiting;
-static BufferQueue<unsigned short,bufferSize> *bq;
+static BufferQueue<unsigned short,bufferSize,bufNum> *bq;
 static bool enobuf=true;
 static const char filterOrder = 3;
 static const short oversample = 32;
@@ -192,7 +194,7 @@ unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned s
         combInput = combRes;
     }
     
-    return combRes * 2;
+    return combRes;
     
 }
 
@@ -200,20 +202,12 @@ Microphone::Microphone(const Microphone& orig) {
 }
 
 bool Microphone::getBuffer(SampleFreq freq,  unsigned short* buffer, unsigned short size){
-    /*
-    mutex.lock();
-    if (busy == true){
-        mutex.unlock();
-        return false;
-    }
-    busy = true;
-    mutex.unlock();
-    */
+
     PCMsize = size;
     PCMindex = 0;
     PCMbuffer = buffer;
     
-    bq=new BufferQueue<unsigned short,bufferSize>();
+    bq=new BufferQueue<unsigned short,bufferSize,bufNum>();
     
     {
         FastInterruptDisableLock dLock;
