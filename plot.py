@@ -33,15 +33,15 @@ pattern = re.compile("(-)?\d+(.\d+)?:(-)?\d+(.\d+)?");
 
 sample = ""
 while sample != beginSignal: #wait for the begin signal
-	sample = ser.readline().split("\r")[0]
-	print("#", sample) #prints the discarded lines before "new"
+	sample = ser.readline().split("\r\n")[0]
+	#print("#", sample) #prints the discarded lines before "new"
 
 while True:
 	FFT = {}
 	sample = ser.readline()
 	while sample != beginSignal:
-		sample = ser.readline().split("\r")[0]
-		print("$", sample)
+		sample = ser.readline().split("\r\n")[0]
+		#print("$", sample)
 		match = pattern.match(sample) 
 		if match != None:
 			sample = match.group()
