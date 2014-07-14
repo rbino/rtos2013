@@ -31,33 +31,25 @@ class CICFilter{
 class Microphone {
 public:
     
-    /*
-     * The possible sampling frequencies.
-     */
-    typedef enum {F8000HZ, F44100HZ} SampleFreq;
-    
     /* 
-     * \eturn the instance of the Microphone class to be used for recording.
+     * \return the instance of the Microphone class to be used for recording.
      */
     static Microphone& instance();
     
     /*
      * Fills the given buffer with PCM samples.
      * 
-     * \param freq the sampling frequency
      * \param buffer the buffer to fill with 16-bit PCM samples
      * \param the number of PCM sample to record
      * \return true when the recording ends successfully, false otherwise
      */
-    bool getBuffer(SampleFreq freq, unsigned short* buffer, unsigned short size);
+    bool getBuffer(unsigned short* buffer, unsigned short size);
     
 
 private:
     Microphone();
     Microphone(const Microphone& orig);
     virtual ~Microphone();
-    bool busy;
-    mutable miosix::Mutex mutex;
     unsigned short PCMsize;
     unsigned short PCMindex;
     unsigned short* PCMbuffer;

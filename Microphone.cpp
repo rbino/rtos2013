@@ -148,7 +148,7 @@ Microphone& Microphone::instance()
 }
 
 Microphone::Microphone() {
-    busy = false;
+
 }
 
 bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
@@ -201,7 +201,7 @@ unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned s
 Microphone::Microphone(const Microphone& orig) {
 }
 
-bool Microphone::getBuffer(SampleFreq freq,  unsigned short* buffer, unsigned short size){
+bool Microphone::getBuffer(unsigned short* buffer, unsigned short size){
 
     PCMsize = size;
     PCMindex = 0;
@@ -237,12 +237,11 @@ bool Microphone::getBuffer(SampleFreq freq,  unsigned short* buffer, unsigned sh
     // RX buffer not empty interrupt enable
     SPI2->CR2 = SPI_CR2_RXDMAEN;  
     
-    /* The settings are the same as 44100Hz 16 bit stereo because
-     * the oversampling factor is 32, the channel is 1 and PDM is 1 bit,
-     * so 44100Hz * 16bit * 2 == 44100 * 32 * 1bit
+    /* The divider is half as 44100Hz 16 bit stereo because
+     * the oversampling factor is 32 and PDM is 1 bit,
+     * so 44100Hz * 16bit == (44100Hz * 32 * 1bit) / 2
      */
     SPI2->I2SPR=  SPI_I2SPR_MCKOE | 3;
-    //SPI2->I2SPR=  SPI_I2SPR_MCKOE | SPI_I2SPR_ODD | 9;
 
     //Configure SPI
     SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_I2SE;
@@ -275,8 +274,6 @@ bool Microphone::getBuffer(SampleFreq freq,  unsigned short* buffer, unsigned sh
     delete bq;
     
     enobuf = true;
-    
-    //busy = false;
     
     return true;
 }
