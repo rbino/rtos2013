@@ -4,11 +4,16 @@
  *
  * Created on December 29, 2013, 4:54 PM
  * 
- * This class define a simple interface for recording audio with the embedded
- * microphone of the STM32F4 Discovery board. It outputs an array of PCM samples
- * obtained by transcoding the PDM signal of the microphone.
- * Note that the microphone on the board outputs PDM samples that are internally
- * converted to PCM by the Microphone class.
+ * This class defines a simple interface for recording audio with the embedded
+ * microphone on the STM32F4 Discovery board.
+ * 
+ * It works by specifying which user-defined function should process the PCM samples
+ * and how many of them. Then the driver can start recordin and the defined function
+ * will be called repeatedly each time the specified number of PCM samples have 
+ * been produced.
+ * 
+ * Internally, it takes care of copying the microphone output in RAM via DMA and
+ * transcoding such output from PDM to PCM. The latter is done via CIC filtering.
  * 
  */
 
@@ -28,8 +33,8 @@ class CICFilter{
 };
 
 /*
- * The Microphone class is the singleton that handles everthing: the device configuration
- * the recording and the transcoding of the PDM into PCM 
+ * The Microphone class is the singleton that handles everything: the device 
+ * configuration, the recording and the transcoding from PDM to PCM 
  */
 class Microphone {
 public:
@@ -39,29 +44,44 @@ public:
      */
     static Microphone& instance();
     
-    /*
-     * Fills the given buffer with PCM samples.
-     * 
-     * \param buffer the buffer to fill with 16-bit PCM samples
-     * \param the number of PCM sample to record
-     * \return true when the recording ends successfully, false otherwise
-     */
-    bool getBuffer(unsigned short* buffer, unsigned int size);
     
+    /*
+     * Initialize the driver for recording and handling of the audio
+     * 
+     * \param cback the callback function that will be executed (repeatedly) when
+     * the driver produces bufsize PCM samples
+     * \param bufsize the number of PCM samples to be processed by the callback 
+     * 
+     */
     void init(function<void (unsigned short*, unsigned int)> cback, unsigned int bufsize);
+    
+    /*
+     * Starts the recording. When start() is called the devices configuration
+     * registers are set and the DMA starts copying the microphone PDM samples in RAM.
+     * The call is non-blocking, the processing from PDM to PCM and the callbacks
+     * are executed in threads.
+     */
     void start();
+    
+    /*
+     * Wait for the last chunk of PCM samples to be processed, stop the DMA and 
+     * reset the configuration registers.
+     */
     void stop();
     
 private:
-    Microphone();
+    Microphone(); // Microphone is a singleton, the constructor is private
     Microphone(const Microphone& orig);
     virtual ~Microphone();
     function<void (unsigned short*, unsigned int)> callback;
+    // the buffers handling the double buffering "callback-side"
     unsigned short* readyBuffer;
     unsigned short* processingBuffer;
+    // variables used to track  and store the transcoding progess
     unsigned int PCMsize;
     unsigned int PCMindex;
     unsigned short* PCMbuffer;
+    
     volatile bool recording;
     mutable miosix::Mutex mutex;
     pthread_t mainLoopThread;
