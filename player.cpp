@@ -36,9 +36,6 @@
 using namespace std;
 using namespace miosix;
 
-#ifdef _BOARD_STM32VLDISCOVERY
-typedef Gpio<GPIOA_BASE,4> dacPin; //DAC1 out on the stm32f100rb is PA4
-#else //Assuming stm32f4discovery
 typedef Gpio<GPIOB_BASE,6>  scl;
 typedef Gpio<GPIOB_BASE,9>  sda;
 typedef Gpio<GPIOA_BASE,4>  lrck;
@@ -47,7 +44,7 @@ typedef Gpio<GPIOC_BASE,10> sclk;
 typedef Gpio<GPIOC_BASE,12> sdin;
 typedef Gpio<GPIOD_BASE,4>  reset;
 typedef SoftwareI2C<sda,scl> i2c;
-#endif
+
 
 static const int bufferSize=256; //Buffer RAM is 4*bufferSize bytes
 static Thread *waiting;
@@ -66,19 +63,6 @@ static void IRQdmaRefill()
 		enobuf=true;
 		return;
 	}
-    #ifdef _BOARD_STM32VLDISCOVERY
-	DMA1_Channel3->CCR=0;
-	DMA1_Channel3->CPAR=reinterpret_cast<unsigned int>(&DAC->DHR12L1);
-	DMA1_Channel3->CMAR=reinterpret_cast<unsigned int>(buffer);
-	DMA1_Channel3->CNDTR=size;
-	DMA1_Channel3->CCR=DMA_CCR3_MSIZE_0 | //Read 16 bit from memory
-					   DMA_CCR3_PSIZE_0 | //Write 16 bit to peripheral
-						  DMA_CCR3_MINC | //Increment memory pointer
-						   DMA_CCR3_DIR | //Transfer memory to peripheral
-						  DMA_CCR3_TEIE | //Interrupt on error
-						  DMA_CCR3_TCIE | //Interrupt on transfer complete
-						    DMA_CCR3_EN;  //Start DMA    
-    #else //Assuming stm32f4discovery
     DMA1_Stream5->CR=0;
 	DMA1_Stream5->PAR=reinterpret_cast<unsigned int>(&SPI3->DR);
 	DMA1_Stream5->M0AR=reinterpret_cast<unsigned int>(buffer);
@@ -90,7 +74,7 @@ static void IRQdmaRefill()
 			         DMA_SxCR_DIR_0   | //Memory to peripheral direction
 			         DMA_SxCR_TCIE    | //Interrupt on completion
 			  	     DMA_SxCR_EN;       //Start the DMA
-    #endif
+
 }
 
 /**
@@ -102,30 +86,6 @@ static void dmaRefill()
 	IRQdmaRefill();
 }
 
-#ifdef _BOARD_STM32VLDISCOVERY
-/**
- * DMA end of transfer interrupt
- */
-void __attribute__((naked)) DMA1_Channel3_IRQHandler()
-{
-	saveContext();
-	asm volatile("bl _Z17DACdmaHandlerImplv");
-	restoreContext();
-}
-
-/**
- * DMA end of transfer interrupt actual implementation
- */
-void __attribute__((used)) DACdmaHandlerImpl()
-{
-	DMA1->IFCR=DMA_IFCR_CGIF3;
-	bq->IRQbufferEmptied();
-	IRQdmaRefill();
-	waiting->IRQwakeup();
-	if(waiting->IRQgetPriority()>Thread::IRQgetCurrentThread()->IRQgetPriority())
-		Scheduler::IRQfindNextThread();
-}
-#else //Assuming stm32f4discovery
 /**
  * DMA end of transfer interrupt
  */
@@ -172,7 +132,6 @@ void cs43l22volume(int db)
     cs43l22send(0x20,vol);
     cs43l22send(0x21,vol);
 }
-#endif
 
 
 /**
@@ -228,46 +187,6 @@ static void bufferFilled()
 }
 
 //
-// class Sound
-//
-
-Sound::~Sound() {}
-
-//
-// class ADPCMSound
-//
-
-bool PCMSound::fillMonoBuffer(unsigned short *buffer, int size)
-{
-	int remaining=soundSize-index;
-	int length=std::min(size,remaining);
-	for(int i=0;i<length;i++)
-	{
-		unsigned short in=soundData[index++];
-		buffer[i]=in;
-	}
-	if(index<soundSize) return false;
-	for(int i=length;i<size;i++) buffer[i]=0;
-	return true;
-}
-
-bool PCMSound::fillStereoBuffer(unsigned short *buffer, int size)
-{
-        int remaining=soundSize-index;
-	int length=std::min(size,remaining*2);
-	for(int i=0;i<length;i+=2)
-	{
-		unsigned short in=soundData[index++];
-		buffer[i+0]=buffer[i+1]=in;
-	}
-	if(index<soundSize) return false;
-	for(int i=length;i<size;i++) buffer[i]=0;
-	return true;
-}
-
-void PCMSound::rewind() { index=0; }
-
-//
 // class Player
 //
 
@@ -277,77 +196,70 @@ Player& Player::instance()
 	return singleton;
 }
 
-#ifdef _BOARD_STM32VLDISCOVERY
-void Player::play(Sound& sound)
+bool Player::fillStereoBuffer(unsigned short *buffer, int size)
+{
+        int remaining=soundSize-soundIndex;
+	int length=std::min(size,remaining*2);
+	for(int i=0;i<length;i+=2)
+	{
+		unsigned short in=soundBuffer[soundIndex++];
+		buffer[i+0]=buffer[i+1]=in;
+	}
+	if(soundIndex<soundSize) return false;
+	for(int i=length;i<size;i++) buffer[i]=0;
+	return true;
+}
+
+void Player::play(unsigned short* buf, unsigned short size)
 {
 	Lock<Mutex> l(mutex);
     bq=new BufferQueue<unsigned short,bufferSize>();
     
-	{
-		FastInterruptDisableLock dLock;
-        //Configure GPIOs
-        dacPin::mode(Mode::INPUT_ANALOG);
-		//Enable peripherals clock gating, other threads might be concurretly
-		//using these registers, so modify them in a critical section
-		RCC->AHBENR |= RCC_AHBENR_DMA1EN;
-		RCC->APB1ENR |= RCC_APB1ENR_DACEN | RCC_APB1ENR_TIM6EN;
-	}
+    soundBuffer = buf;
+    soundSize = size;
+    soundIndex = 0;
 
-	//Configure DAC
-	DAC->CR=DAC_CR_DMAEN1 | DAC_CR_TEN1 | DAC_CR_EN1;
+	NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
-	//Configure DMA
-	NVIC_SetPriority(DMA1_Channel3_IRQn,2);//High priority for DMA
-	NVIC_EnableIRQ(DMA1_Channel3_IRQn);
-
-	//Configure TIM6
-	DBGMCU->CR |= DBGMCU_CR_DBG_TIM6_STOP; //TIM6 stops while debugging
-	TIM6->CR1=0; //Upcounter, not started, no special options
-	TIM6->CR2=TIM_CR2_MMS_1; //Update evant is output as TRGO, used by the DAC
-	TIM6->PSC=0;
-	TIM6->ARR=(24000000/44100)-1;
-	TIM6->CR1|=TIM_CR1_CEN;
+    //Leading blank audio, so as to be sure audio is played from the start
+    /*
+    memset(getWritableBuffer(),0,bufferSize*sizeof(unsigned short));
+	bufferFilled();
+    */
     
-    //Antibump, rise slowly to 0x8000
-	unsigned short *buffer=getWritableBuffer();
-	for(int i=0;i<bufferSize;i++) buffer[i]=(0x8000/(2*bufferSize))*i;
-	bufferFilled();
-	buffer=getWritableBuffer();
-	for(int i=0;i<bufferSize;i++) buffer[i]=(0x8000/(2*bufferSize))*i+0x4000;
-	bufferFilled();
-
-	//Start playing
-	sound.rewind();
-	waiting=Thread::getCurrentThread();
-	for(;;)
+    bool first=true;
+    waiting=Thread::getCurrentThread();
+    for(;;)
+    {
+        if(enobuf)
 	{
-		if(enobuf)
-		{
-			enobuf=false;
-			dmaRefill();
-		}
-        unsigned short *buffer=getWritableBuffer();
-		if(sound.fillMonoBuffer(buffer,bufferSize)) break;
-        for(int i=0;i<bufferSize;i++) buffer[i]+=0x8000;
-		bufferFilled();
+                enobuf=false;
+                dmaRefill();
+                if(first)
+                {
+                        first=false;
+                        cs43l22send(0x02,0x9e);
+                }
 	}
-	atomicTestAndWaitUntil(enobuf,true); //Play last buffer
-
-    //Shutdown
-	NVIC_DisableIRQ(DMA1_Channel3_IRQn);
-	TIM6->CR1=0;
-	DMA1_Channel3->CCR=0;
-	DAC->CR=0;
-	dacPin::mode(Mode::INPUT_PULL_UP_DOWN);
-	dacPin::pulldown();
+	if(fillStereoBuffer(getWritableBuffer(),bufferSize)) break;
+	bufferFilled();
+    }
+    
+    //Trailing blank audio, so as to be sure audio is played to the end    
+    /*
+    memset(getWritableBuffer(),0x8000,bufferSize*sizeof(unsigned short));
+	bufferFilled();
+    */
+    
+    atomicTestAndWaitUntil(enobuf,true); //Continue sending MCLK for some time
+  
+    NVIC_DisableIRQ(DMA1_Stream5_IRQn);
+     
     delete bq;
 }
-#else //Assuming stm32f4discovery
-void Player::play(Sound& sound)
-{
-	Lock<Mutex> l(mutex);
-    bq=new BufferQueue<unsigned short,bufferSize>();
 
+void Player::init(){
+    
     {
 		FastInterruptDisableLock dLock;
         //Enable DMA1 and SPI3/I2S3
@@ -384,7 +296,7 @@ void Player::play(Sound& sound)
     cs43l22send(0x05,0x20); //AUTO=0, SPEED=01, 32K=0, VIDEO=0, RATIO=0, MCLK=0
     cs43l22send(0x04,0xaf); //Headphone always ON, Speaker always OFF
     cs43l22send(0x06,0x04); //I2S Mode
-    cs43l22volume(-20);
+    cs43l22volume(0);
     
     SPI3->CR2=SPI_CR2_TXDMAEN;
     SPI3->I2SPR=  SPI_I2SPR_MCKOE | 6;
@@ -393,53 +305,7 @@ void Player::play(Sound& sound)
                 | SPI_I2SCFGR_I2SCFG_1; //Master transmit
 
     NVIC_SetPriority(DMA1_Stream5_IRQn,2);//High priority for DMA
-	NVIC_EnableIRQ(DMA1_Stream5_IRQn);    
-
-    //Leading blank audio, so as to be sure audio is played from the start
-    memset(getWritableBuffer(),0,bufferSize*sizeof(unsigned short));
-	bufferFilled();
-    
-	//Start playing
-	sound.rewind();
-    bool first=true;
-	waiting=Thread::getCurrentThread();
-	for(;;)
-	{
-		if(enobuf)
-		{
-			enobuf=false;
-			dmaRefill();
-            if(first)
-            {
-                first=false;
-                cs43l22send(0x02,0x9e);
-            }
-		}
-		if(sound.fillStereoBuffer(getWritableBuffer(),bufferSize)) break;
-		bufferFilled();
-	}
-    
-    //Trailing blank audio, so as to be sure audio is played to the end
-    memset(getWritableBuffer(),0,bufferSize*sizeof(unsigned short));
-	bufferFilled();
-    memset(getWritableBuffer(),0,bufferSize*sizeof(unsigned short));
-	bufferFilled();
-    
-    cs43l22send(0x0f,0xf0); //Mute all channels
-    cs43l22send(0x02,0x9f); //Audio shutdown
-    
-	atomicTestAndWaitUntil(enobuf,true); //Continue sending MCLK for some time
-
-    reset::low(); //Keep in reset state
-    NVIC_DisableIRQ(DMA1_Stream5_IRQn);
-    SPI3->I2SCFGR=0;
-    {
-		FastInterruptDisableLock dLock;
-        RCC->CR &= ~RCC_CR_PLLI2SON;
-    }
-    delete bq;
 }
-#endif
 
 bool Player::isPlaying() const
 {

@@ -4,38 +4,28 @@
 #include "Microphone.h"
 #include "player.h"
 #include <math.h>
+#include <tr1/functional>
 
 using namespace std;
+using namespace std::tr1;
 using namespace miosix;
 
-typedef Gpio<GPIOD_BASE,12> led1;
-
 /*
- * This example program records 1 second from the microphone (44100 samples) and
+ * This example program records half second (22050 samples) from the microphone and
  * plays such sound through the board's DAC.
  */
 int main()
 {
-    led1::mode(Mode::OUTPUT);
 
+    Player& player = Player::instance();
+    Microphone& mic = Microphone::instance(); 
     
-    while(1)
-    {
-        static const unsigned short size = 44100;
-        unsigned short *buffer = (unsigned short*) malloc(sizeof(unsigned short)*size);
-        
-        if (buffer==NULL){
-            led1::high();
-        }
-
-        if (Microphone::instance().getBuffer(Microphone::F44100HZ, buffer, size)){
-  
-                PCMSound sound(buffer,size);
-                Player::instance().play(sound);                      
-
-        }
-        
-        free(buffer);
-
-    }
+    static const unsigned short size = 20050;
+    mic.init(bind(&Player::play,&player,placeholders::_1,placeholders::_2),size);
+    player.init();
+    mic.start();
+    
+    while (1){
+    };
+    
 }

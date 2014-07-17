@@ -31,100 +31,6 @@
 #define PLAYER_H
 
 /**
- * Interface class from where all sound classes derive
- */
-class Sound
-{
-public:
-	/**
-	 * Fill a buffer with audio samples
-	 * \param buffer a buffer where audio samples (16bit unsigned, 44100Hz)
-	 * are to be stored. If there is not enough data to fill the entire buffer
-	 * the remaining part must be filled with 0
-	 * \param length buffer length, must be divisible by two
-	 * \return true if this is the last valif buffer (eof encountered)
-	 */
-	virtual bool fillMonoBuffer(unsigned short *buffer, int length)=0;
-    
-    /**
-	 * Fill a stereo buffer with audio samples
-	 * \param buffer a buffer where audio samples (16bit unsigned, 44100Hz)
-	 * are to be stored. If there is not enough data to fill the entire buffer.
-     * The buffer format is alternating left-right samples, so buffer[0] is left
-     * buffer[1] is right, buffer[2] is again left...
-	 * the remaining part must be filled with 0
-	 * \param length buffer length, must be divisible by four
-	 * \return true if this is the last valif buffer (eof encountered)
-	 */
-	virtual bool fillStereoBuffer(unsigned short *buffer, int length)=0;
-
-	/**
-	 * Rewind the internal sound pointer so that succesive calls to
-	 * fillBuffer() start brom the beginning of the sound.
-	 */
-	virtual void rewind()=0;
-
-	/**
-	 * Destructor
-	 */
-	virtual ~Sound();
-};
-
-/**
- * Class to play a buffer contatinig ADPCM compressed audio
- */
-class PCMSound : public Sound
-{
-public:
-	/**
-	 * Constructor
-	 * \param data ADPCM encoded data. Ownership of the buffer remains
-	 * of the caller, which is responsible to make sure it remains valid
-	 * for the entire lifetime of this class. This is not a problem in
-	 * the expected use case of the buffer being const and static
-	 * \param size size of data
-	 */
-	PCMSound(unsigned short *data, int size)
-			: soundData(data), soundSize(size), index(0) {}
-
-	/**
-	 * Fill a buffer with audio samples
-	 * \param buffer a buffer where audio samples (16bit unsigned, 44100Hz)
-	 * are to be stored. If there is not enough data to fill the entire buffer
-	 * the remaining part must be filled with 0
-	 * \param length buffer length, must be divisible by two
-	 * \return true if this is the last valif buffer (eof encountered)
-	 */
-	virtual bool fillMonoBuffer(unsigned short *buffer, int size);
-    
-    /**
-	 * Fill a stereo buffer with audio samples
-	 * \param buffer a buffer where audio samples (16bit unsigned, 44100Hz)
-	 * are to be stored. If there is not enough data to fill the entire buffer.
-     * The buffer format is alternating left-right samples, so buffer[0] is left
-     * buffer[1] is right, buffer[2] is again left...
-	 * the remaining part must be filled with 0
-	 * \param length buffer length, must be divisible by four
-	 * \return true if this is the last valif buffer (eof encountered)
-	 */
-	virtual bool fillStereoBuffer(unsigned short *buffer, int length);
-
-	/**
-	 * Rewind the internal sound pointer so that succesive calls to
-	 * fillBuffer() start brom the beginning of the sound.
-	 */
-	virtual void rewind();
-
-private:
-	PCMSound(const PCMSound&);
-	PCMSound& operator= (const PCMSound&);
-
-	unsigned short *soundData;
-	int soundSize;
-	int index;
-};
-
-/**
  * Class to play an audio file on the STM32's DAC
  */
 class Player
@@ -139,18 +45,23 @@ public:
 	 * Play an audio file, returning after the file has coompleted playing
 	 * \param sound sound file to play
 	 */
-	void play(Sound& sound);
+	void play(unsigned short* buf, unsigned short size);
 
 	/**
 	 * \return true if the resource is busy
 	 */
 	bool isPlaying() const;
+        
+        void init();
 private:
 	Player();
 	Player(const Player&);
 	Player& operator= (const Player&);
-
+        bool fillStereoBuffer(unsigned short *buffer, int size);
 	mutable miosix::Mutex mutex;
+        unsigned short* soundBuffer;
+        unsigned int soundSize;
+        unsigned int soundIndex;
 };
 
 #endif //PLAYER_H
