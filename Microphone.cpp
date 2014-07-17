@@ -19,15 +19,15 @@ using namespace miosix;
 typedef Gpio<GPIOB_BASE,10> clk;
 typedef Gpio<GPIOC_BASE,3> dout;
 
-static const int bufferSize=32; //Buffer RAM is 4*bufferSize bytes
+static const int bufferSize=512; //Buffer RAM is 4*bufferSize bytes
 static const int bufNum = 2;
 static Thread *waiting;
 static BufferQueue<unsigned short,bufferSize,bufNum> *bq;
 static bool enobuf=true;
-static const char filterOrder = 3;
-static const short oversample = 32;
-static unsigned short intReg[filterOrder] = {0x8000,0x8000,0x8000};
-static unsigned short combReg[filterOrder] = {0x8000, 0x8000,0x8000};
+static const char filterOrder = 4;
+static const short oversample = 16;
+static unsigned short intReg[filterOrder] = {0x8000,0x8000,0x8000,0x8000};
+static unsigned short combReg[filterOrder] = {0x8000, 0x8000,0x8000,0x8000};
 static signed char pdmLUT[] = {-1, 1};
 
 /**
@@ -164,39 +164,6 @@ bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
     return true;    
 }
 
-unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned short index) {
-    
-    short combInput, combRes;
-    
-    // perform integration on the first word of the PDM chunk to be filtered
-    for (short i=0; i < 16; i++){
-        intReg[0] += pdmLUT[(PDMBuffer[index] >> (15-i)) & 1];
-        for (short j=1; j < filterOrder; j++){
-            intReg[j] += intReg[j-1];
-        }
-    }
-    
-    // perform integration on the second word
-    for (short i=0; i < 16; i++){
-    //for (short i=15; i >= 0; i--){
-        intReg[0] += pdmLUT[(PDMBuffer[index+1] >> (15-i)) & 1];
-        for (short j=1; j < filterOrder; j++){
-            intReg[j] += intReg[j-1];
-        }
-    }
-        
-    combInput = intReg[filterOrder-1];// the last cell of intReg contains the integrated signal
-    
-    //apply the comb filter:
-    for (short i=0; i < filterOrder; i++){
-        combRes = combInput - combReg[i];
-        combReg[i] = combInput;
-        combInput = combRes;
-    }
-    
-    return combRes;
-    
-}
 
 Microphone::Microphone(const Microphone& orig) {
 }
@@ -264,7 +231,30 @@ bool Microphone::getBuffer(unsigned short* buffer, unsigned short size){
     }
     
     atomicTestAndWaitUntil(enobuf,true);
+unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned int index) {
     
+    short combInput, combRes;
+    
+    // perform integration on the first word of the PDM chunk to be filtered
+    for (short i=0; i < 16; i++){
+        intReg[0] += pdmLUT[(PDMBuffer[index] >> (15-i)) & 1];
+        for (short j=1; j < filterOrder; j++){
+            intReg[j] += intReg[j-1];
+        }
+    }
+        
+    combInput = intReg[filterOrder-1];// the last cell of intReg contains the integrated signal
+    
+    //apply the comb filter:
+    for (short i=0; i < filterOrder; i++){
+        combRes = combInput - combReg[i];
+        combReg[i] = combInput;
+        combInput = combRes;
+    }
+    
+    return combRes;
+    
+}
     NVIC_DisableIRQ(DMA1_Stream3_IRQn);
     SPI2->I2SCFGR=0;
     {
