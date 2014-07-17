@@ -1,10 +1,3 @@
-/* 
- * File:   Microphone.cpp
- * Author: user
- * 
- * Created on December 29, 2013, 4:54 PM
- */
-
 #include <cstdio>
 #include "miosix.h"
 #include "miosix/kernel/buffer_queue.h"
@@ -193,6 +186,7 @@ void Microphone::start(){
 
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
 
+    delayMs(10); //waits for the microphone to enable
     pthread_create(&mainLoopThread,NULL,mainLoopLauncher,reinterpret_cast<void*>(this));
 }
 
@@ -208,13 +202,14 @@ void Microphone::mainLoop(){
         bq=new BufferQueue<unsigned short,bufferSize,bufNum>();
         PCMindex = 0;
         NVIC_EnableIRQ(DMA1_Stream3_IRQn);        
-
+        // process any new chunk of PDM samples
         for (;;){
             if(enobuf){
                 enobuf = false;
                 dmaRefill();
             }
             if(processPDM(getReadableBuffer(),bufferSize) == true){
+                // transcode until the specified number of PCM samples
                 break;
             }
             bufferEmptied();  
@@ -224,12 +219,16 @@ void Microphone::mainLoop(){
         NVIC_DisableIRQ(DMA1_Stream3_IRQn);
         delete bq;
         
+        // swaps the ready and the processing buffer: allows double buffering
+        //on the callback side
         unsigned short* tmp;
         tmp = readyBuffer;
         readyBuffer = processingBuffer;
         processingBuffer = tmp;
         
         if (!first){
+            // if the previous callback is still running, wait for it to end.
+            // this implies that some samples may be lost
             pthread_join(cback,NULL);
         } else {
             first = false;
@@ -262,21 +261,27 @@ bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
     return true;    
 }
 
+/*
+ * This function takes care of the transcoding from 16 PDM bit to 1 PCM sample
+ * via CIC filtering. Decimator rate: 16:1, CIC stages: 4.
+ */
 unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned int index) {
     
     short combInput, combRes;
     
     // perform integration on the first word of the PDM chunk to be filtered
     for (short i=0; i < 16; i++){
+        //integrate each single bit
         intReg[0] += pdmLUT[(PDMBuffer[index] >> (15-i)) & 1];
         for (short j=1; j < filterOrder; j++){
             intReg[j] += intReg[j-1];
         }
     }
-        
-    combInput = intReg[filterOrder-1];// the last cell of intReg contains the integrated signal
     
-    //apply the comb filter:
+    // the last cell of intReg contains the output of the integrator stage
+    combInput = intReg[filterOrder-1];
+    
+    //apply the comb filter (with delay 1):
     for (short i=0; i < filterOrder; i++){
         combRes = combInput - combReg[i];
         combReg[i] = combInput;
@@ -291,8 +296,11 @@ Microphone::Microphone(const Microphone& orig) {
 }
 
 void Microphone::stop() {
+    // stop the software
     recording = false;
+    // waits for the last PCM processing to end
     pthread_join(mainLoopThread, NULL);
+    // reset the configuration registers to stop the hardware
     NVIC_DisableIRQ(DMA1_Stream3_IRQn);
     SPI2->I2SCFGR=0;
     {
