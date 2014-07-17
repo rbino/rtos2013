@@ -11,7 +11,6 @@
 #include "miosix/kernel/scheduler/scheduler.h"
 #include "util/software_i2c.h"
 #include "Microphone.h"
-#include <tr1/functional>
 
 using namespace std;
 using namespace miosix;
@@ -151,31 +150,15 @@ Microphone::Microphone() {
 
 }
 
-bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
-    int remaining = PCMsize - PCMindex;
-    int length = std::min(remaining, size/2); 
-    // convert couples of 16 bit pdm samples in one 16-bit PCM sample
-    for (int i=0; i < length; i+=2){
-        PCMbuffer[PCMindex++] = PDMFilter(pdmbuffer, i);
-    }
-    if (PCMindex < PCMsize) //if produced PCM sample are not enough 
-        return false; 
-    
-    return true;    
+void Microphone::init(function<void (unsigned short*, unsigned int)> cback, unsigned int bufsize){
+    callback = cback;
+    PCMsize = bufsize;
 }
 
-
-Microphone::Microphone(const Microphone& orig) {
-}
-
-bool Microphone::getBuffer(unsigned short* buffer, unsigned short size){
-
-    PCMsize = size;
-    PCMindex = 0;
-    PCMbuffer = buffer;
-    
-    bq=new BufferQueue<unsigned short,bufferSize,bufNum>();
-    
+void Microphone::start(){
+    recording = true;
+    readyBuffer = (unsigned short*) malloc(sizeof(unsigned short) * PCMsize);
+    processingBuffer = (unsigned short*) malloc(sizeof(unsigned short) * PCMsize);
     {
         FastInterruptDisableLock dLock;
         //Enable DMA1 and SPI2/I2S2 and GPIOB and GPIOC
@@ -194,7 +177,6 @@ bool Microphone::getBuffer(unsigned short* buffer, unsigned short size){
         
         // I2S PLL Clock Frequency: 135.5 Mhz
         RCC->PLLI2SCFGR=(2<<28) | (271<<6);
-        //RCC->PLLI2SCFGR=(4<<28) | (429<<6);
         
         RCC->CR |= RCC_CR_PLLI2SON;
     }
@@ -204,33 +186,81 @@ bool Microphone::getBuffer(unsigned short* buffer, unsigned short size){
     // RX buffer not empty interrupt enable
     SPI2->CR2 = SPI_CR2_RXDMAEN;  
     
-    /* The divider is half as 44100Hz 16 bit stereo because
-     * the oversampling factor is 32 and PDM is 1 bit,
-     * so 44100Hz * 16bit == (44100Hz * 32 * 1bit) / 2
-     */
-    SPI2->I2SPR=  SPI_I2SPR_MCKOE | 3;
+    SPI2->I2SPR=  SPI_I2SPR_MCKOE | 12;
 
     //Configure SPI
     SPI2->I2SCFGR = SPI_I2SCFGR_I2SMOD | SPI_I2SCFGR_I2SCFG_0 | SPI_I2SCFGR_I2SCFG_1 | SPI_I2SCFGR_I2SE;
 
-    
     NVIC_SetPriority(DMA1_Stream3_IRQn,2);//High priority for DMA
-    NVIC_EnableIRQ(DMA1_Stream3_IRQn); 
-    
+
+    pthread_create(&mainLoopThread,NULL,mainLoopLauncher,reinterpret_cast<void*>(this));
+}
+
+void* Microphone::mainLoopLauncher(void* arg){
+        reinterpret_cast<Microphone*>(arg)->mainLoop();
+}
+
+void Microphone::mainLoop(){
     waiting = Thread::getCurrentThread();
-    for (;;){
-        if(enobuf){
-            enobuf = false;
-            dmaRefill();
+    pthread_t cback;
+    bool first=true;
+    while(recording){
+        bq=new BufferQueue<unsigned short,bufferSize,bufNum>();
+        PCMindex = 0;
+        NVIC_EnableIRQ(DMA1_Stream3_IRQn);        
+
+        for (;;){
+            if(enobuf){
+                enobuf = false;
+                dmaRefill();
+            }
+            if(processPDM(getReadableBuffer(),bufferSize) == true){
+                break;
+            }
+            bufferEmptied();  
+
         }
-        if(processPDM(getReadableBuffer(),bufferSize) == true){
-            break;
+        atomicTestAndWaitUntil(enobuf,true);
+        NVIC_DisableIRQ(DMA1_Stream3_IRQn);
+        delete bq;
+        
+        if (!first){
+            pthread_join(cback,NULL);
+        } else {
+            first = false;
         }
-        bufferEmptied();  
+        
+        unsigned short* tmp;
+        tmp = readyBuffer;
+        readyBuffer = processingBuffer;
+        processingBuffer = tmp;
+        pthread_create(&cback,NULL,callbackLauncher,reinterpret_cast<void*>(this));
         
     }
     
-    atomicTestAndWaitUntil(enobuf,true);
+}
+
+void* Microphone::callbackLauncher(void* arg){
+    reinterpret_cast<Microphone*>(arg)->execCallback();
+}
+
+void Microphone::execCallback() {
+    callback(readyBuffer,PCMsize);
+}
+
+bool Microphone::processPDM(const unsigned short *pdmbuffer, int size) {
+    int remaining = PCMsize - PCMindex;
+    int length = std::min(remaining, size); 
+    // convert couples 16 pdm one-bit samples in one 16-bit PCM sample
+    for (int i=0; i < length; i++){    
+        processingBuffer[PCMindex++] = PDMFilter(pdmbuffer, i);
+    }
+    if (PCMindex < PCMsize) //if produced PCM sample are not enough 
+        return false; 
+    
+    return true;    
+}
+
 unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned int index) {
     
     short combInput, combRes;
@@ -255,19 +285,22 @@ unsigned short Microphone::PDMFilter(const unsigned short* PDMBuffer, unsigned i
     return combRes;
     
 }
+
+Microphone::Microphone(const Microphone& orig) {
+}
+
+void Microphone::stop() {
+    recording = false;
+    pthread_join(mainLoopThread, NULL);
     NVIC_DisableIRQ(DMA1_Stream3_IRQn);
     SPI2->I2SCFGR=0;
     {
 	FastInterruptDisableLock dLock;
         RCC->CR &= ~RCC_CR_PLLI2SON;
     }
-    delete bq;
-    
-    enobuf = true;
-    
-    return true;
+    free(readyBuffer);
+    free(processingBuffer);
 }
-
 
 Microphone::~Microphone() {
 }

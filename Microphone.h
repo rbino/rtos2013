@@ -14,6 +14,9 @@
 
 
 #include "miosix.h"
+#include <tr1/functional>
+
+using namespace std::tr1;
 
 
 
@@ -43,18 +46,31 @@ public:
      * \param the number of PCM sample to record
      * \return true when the recording ends successfully, false otherwise
      */
-    bool getBuffer(unsigned short* buffer, unsigned short size);
+    bool getBuffer(unsigned short* buffer, unsigned int size);
     
-
+    void init(function<void (unsigned short*, unsigned int)> cback, unsigned int bufsize);
+    void start();
+    void stop();
+    
 private:
     Microphone();
     Microphone(const Microphone& orig);
     virtual ~Microphone();
-    unsigned short PCMsize;
-    unsigned short PCMindex;
+    function<void (unsigned short*, unsigned int)> callback;
+    unsigned short* readyBuffer;
+    unsigned short* processingBuffer;
+    unsigned int PCMsize;
+    unsigned int PCMindex;
     unsigned short* PCMbuffer;
+    volatile bool recording;
+    mutable miosix::Mutex mutex;
+    pthread_t mainLoopThread;
     bool processPDM(const unsigned short *pdmbuffer, int size);
-    unsigned short PDMFilter(const unsigned short* PDMBuffer, unsigned short index);
+    unsigned short PDMFilter(const unsigned short* PDMBuffer, unsigned int index);
+    void mainLoop();
+    void execCallback();
+    static void* callbackLauncher(void* arg);
+    static void* mainLoopLauncher(void* arg);
     
     
 };
