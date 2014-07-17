@@ -224,16 +224,17 @@ void Microphone::mainLoop(){
         NVIC_DisableIRQ(DMA1_Stream3_IRQn);
         delete bq;
         
+        unsigned short* tmp;
+        tmp = readyBuffer;
+        readyBuffer = processingBuffer;
+        processingBuffer = tmp;
+        
         if (!first){
             pthread_join(cback,NULL);
         } else {
             first = false;
         }
         
-        unsigned short* tmp;
-        tmp = readyBuffer;
-        readyBuffer = processingBuffer;
-        processingBuffer = tmp;
         pthread_create(&cback,NULL,callbackLauncher,reinterpret_cast<void*>(this));
         
     }
