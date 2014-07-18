@@ -28,9 +28,6 @@ using namespace std::tr1;
 #ifndef MICROPHONE_H
 #define	MICROPHONE_H
 
-class CICFilter{
-    
-};
 
 /*
  * The Microphone class is the singleton that handles everything: the device 
@@ -80,10 +77,7 @@ private:
     // variables used to track  and store the transcoding progess
     unsigned int PCMsize;
     unsigned int PCMindex;
-    unsigned short* PCMbuffer;
     
-    volatile bool recording;
-    mutable miosix::Mutex mutex;
     pthread_t mainLoopThread;
     bool processPDM(const unsigned short *pdmbuffer, int size);
     unsigned short PDMFilter(const unsigned short* PDMBuffer, unsigned int index);
