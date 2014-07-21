@@ -217,29 +217,18 @@ void Player::play(unsigned short* buf, unsigned short size)
     soundBuffer = buf;
     soundSize = size;
     soundIndex = 0;
-
-
-
-    //Leading blank audio, so as to be sure audio is played from the start    
-    /*
-    memset(getWritableBuffer(),0,bufferSize*sizeof(unsigned short));
-	bufferFilled();
-    */
         
-    bool first=true;
     waiting=Thread::getCurrentThread();
+    fillStereoBuffer(getWritableBuffer(),bufferSize);
+    fillStereoBuffer(getWritableBuffer(),bufferSize);
     for(;;)
     {
         if(enobuf)
 	{
                 enobuf=false;
                 dmaRefill();
-                if(first)
-                {
-                        first=false;
-                }
 	}
-	if(fillStereoBuffer(getWritableBuffer(),bufferSize)) break;
+        if(fillStereoBuffer(getWritableBuffer(),bufferSize)) break;
 	bufferFilled();
     }
     
