@@ -55,6 +55,7 @@ public:
         void init();
 private:
 	Player();
+        ~Player();
 	Player(const Player&);
 	Player& operator= (const Player&);
         bool fillStereoBuffer(unsigned short *buffer, int size);

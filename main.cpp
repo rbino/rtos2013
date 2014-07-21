@@ -20,7 +20,7 @@ int main()
     Player& player = Player::instance();
     Microphone& mic = Microphone::instance(); 
     
-    static const unsigned short size = 20050;
+    static const unsigned short size = 10000;
     mic.init(bind(&Player::play,&player,placeholders::_1,placeholders::_2),size);
     player.init();
     mic.start();

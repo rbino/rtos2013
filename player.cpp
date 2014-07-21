@@ -213,20 +213,19 @@ bool Player::fillStereoBuffer(unsigned short *buffer, int size)
 void Player::play(unsigned short* buf, unsigned short size)
 {
 	Lock<Mutex> l(mutex);
-    bq=new BufferQueue<unsigned short,bufferSize>();
     
     soundBuffer = buf;
     soundSize = size;
     soundIndex = 0;
 
-	NVIC_EnableIRQ(DMA1_Stream5_IRQn);
 
-    //Leading blank audio, so as to be sure audio is played from the start
+
+    //Leading blank audio, so as to be sure audio is played from the start    
     /*
     memset(getWritableBuffer(),0,bufferSize*sizeof(unsigned short));
 	bufferFilled();
     */
-    
+        
     bool first=true;
     waiting=Thread::getCurrentThread();
     for(;;)
@@ -238,7 +237,6 @@ void Player::play(unsigned short* buf, unsigned short size)
                 if(first)
                 {
                         first=false;
-                        cs43l22send(0x02,0x9e);
                 }
 	}
 	if(fillStereoBuffer(getWritableBuffer(),bufferSize)) break;
@@ -250,12 +248,7 @@ void Player::play(unsigned short* buf, unsigned short size)
     memset(getWritableBuffer(),0x8000,bufferSize*sizeof(unsigned short));
 	bufferFilled();
     */
-    
-    atomicTestAndWaitUntil(enobuf,true); //Continue sending MCLK for some time
-  
-    NVIC_DisableIRQ(DMA1_Stream5_IRQn);
      
-    delete bq;
 }
 
 void Player::init(){
@@ -303,8 +296,10 @@ void Player::init(){
 	SPI3->I2SCFGR=SPI_I2SCFGR_I2SMOD    //I2S mode selected
                 | SPI_I2SCFGR_I2SE      //I2S Enabled
                 | SPI_I2SCFGR_I2SCFG_1; //Master transmit
-
+    bq=new BufferQueue<unsigned short,bufferSize>();
     NVIC_SetPriority(DMA1_Stream5_IRQn,2);//High priority for DMA
+    NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+    cs43l22send(0x02,0x9e);
 }
 
 bool Player::isPlaying() const
@@ -315,3 +310,8 @@ bool Player::isPlaying() const
 }
 
 Player::Player() {}
+
+Player::~Player() {
+    NVIC_DisableIRQ(DMA1_Stream5_IRQn);
+    delete bq;
+}

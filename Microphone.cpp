@@ -18,8 +18,8 @@ static BufferQueue<unsigned short,bufferSize,bufNum> *bq;
 static bool enobuf=true;
 static const char filterOrder = 4;
 static const short oversample = 16;
-static unsigned short intReg[filterOrder] = {0x8000,0x8000,0x8000,0x8000};
-static unsigned short combReg[filterOrder] = {0x8000, 0x8000,0x8000,0x8000};
+static unsigned short intReg[filterOrder] = {0,0,0,0};
+static unsigned short combReg[filterOrder] = {0,0,0,0};
 static signed char pdmLUT[] = {-1, 1};
 
 /**
@@ -198,10 +198,10 @@ void Microphone::mainLoop(){
     waiting = Thread::getCurrentThread();
     pthread_t cback;
     bool first=true;
+    bq=new BufferQueue<unsigned short,bufferSize,bufNum>();
+    NVIC_EnableIRQ(DMA1_Stream3_IRQn);  
     while(recording){
-        bq=new BufferQueue<unsigned short,bufferSize,bufNum>();
-        PCMindex = 0;
-        NVIC_EnableIRQ(DMA1_Stream3_IRQn);        
+        PCMindex = 0;      
         // process any new chunk of PDM samples
         for (;;){
             if(enobuf){
@@ -215,9 +215,6 @@ void Microphone::mainLoop(){
             bufferEmptied();  
 
         }
-        atomicTestAndWaitUntil(enobuf,true);
-        NVIC_DisableIRQ(DMA1_Stream3_IRQn);
-        delete bq;
         
         // swaps the ready and the processing buffer: allows double buffering
         //on the callback side
@@ -302,6 +299,7 @@ void Microphone::stop() {
     pthread_join(mainLoopThread, NULL);
     // reset the configuration registers to stop the hardware
     NVIC_DisableIRQ(DMA1_Stream3_IRQn);
+    delete bq;
     SPI2->I2SCFGR=0;
     {
 	FastInterruptDisableLock dLock;
